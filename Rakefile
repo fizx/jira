@@ -10,9 +10,9 @@ begin
     gem.email = "kmaxwell@twitter.com"
     gem.homepage = "http://github.com/fizx/jira"
     gem.authors = ["Kyle Maxwell"]
-    gem.dependency "jira4r", "0.3"
-    gem.dependency "plain_option_parser"
-    gem.dependency "highline"
+    gem.add_dependency "jira4r", "0.3"
+    gem.add_dependency "plain_option_parser"
+    gem.add_dependency "highline"
     gem.add_development_dependency "rspec", ">= 1.2.9"
     # gem is a Gem::Specification... see http://www.rubygems.org/read/chapter/20 for additional settings
   end
