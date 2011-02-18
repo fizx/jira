@@ -6,47 +6,48 @@ require "jira4r"
 require "yaml"
 
 $config_file = File.join(ENV["HOME"], ".jira.yml")
-config = File.exists?($config_file) ? YAML.load(File.open($config_file)) : {}
+$config = File.exists?($config_file) ? YAML.load(File.open($config_file)) : {}
 
-def input(prompt, config, key, default = nil, &validation)
+def input(prompt, key, default = nil, &validation)
   key = key.to_s
-  @original = config[key]
-  input = ask("#{prompt} [#{config[key] || default}]")
-  config[key] = input unless input.empty? 
-  config[key] ||= default
+  @original = $config[key]
+  input = ask("#{prompt} [#{$config[key] || default}]")
+  $config[key] = input unless input.empty? 
+  $config[key] ||= default
   validation.call if validation
-  save config
+  save $config
 rescue
-  config[key] = @original
+  $config[key] = @original
   raise
 end
 
-def save(config)
+def save
   File.open($config_file, "w") do |f|
-    YAML.dump(config, f)
+    YAML.dump($config, f)
   end
 end
 
-def password(config)
+def password
   password = ask("Enter password: ") { |q| q.echo = false }
   init
-  config["token"] = $jira.login(config["user"], password)
-  save config
+  $config["token"] = $jira.login($config["user"], password)
+  save
+  login
 end
 
-def init(config)
-  $jira = Jira4R::JiraTool.new(2, config["location"])
+def init
+  $jira = Jira4R::JiraTool.new(2, $config["location"])
   logger = Logger.new(STDERR)
   logger.level = Logger::WARN
   $jira.logger = logger
 end
 
-def login(config)
-  init(config)
-  $jira.instance_variable_set("@token", config["token"])
+def login
+  init
+  $jira.instance_variable_set("@token", $config["token"])
 end
 
-def create_ticket(summary, description, user, group, reviewboard = nil, git_repo = nil, branch = nil)
+def create_ticket(summary, description, user, group, component, reviewboard = nil, git_repo = nil, branch = nil)
   issue = Jira4R::V2::RemoteIssue.new
   issue.summary = summary
   issue.description = description
@@ -54,6 +55,8 @@ def create_ticket(summary, description, user, group, reviewboard = nil, git_repo
   issue.assignee = user
   issue.reporter = user
   issue.project = group
+  
+  issue.components = $jira.getComponents(group).select{|c| c.name == component }
   
   issue.customFieldValues = []
   if reviewboard
@@ -83,22 +86,29 @@ def create_ticket(summary, description, user, group, reviewboard = nil, git_repo
   puts issue.inspect
   
   issue = $jira.createIssue(issue)
+rescue SOAP::FaultError => e
+  if e.message =~ /auth/
+    password
+    retry
+  else
+    raise
+  end
 end
 
 PlainOptionParser.new do
   desc "Setup your global JIRA settings"
   cmd "setup" do 
-    input "JIRA location", config, :location
-    input "JIRA user", config, :user, ENV["USER"]
-    password config
+    input "JIRA location", :location
+    input "JIRA user", :user, ENV["USER"]
+    password
   end  
   
   desc "Make a context"
   cmd "configure" do
-    login(config)
+    login
     begin
-      input "Project", config, :project do
-        $project = $jira.getProjectByKey(config["project"])
+      input "Project", :project do
+        $project = $jira.getProjectByKey($config["project"])
       end
     rescue
       puts "Invalid project name!"
@@ -106,8 +116,8 @@ PlainOptionParser.new do
     end
     
     begin
-      input "Component", config, :component do
-        $jira.call_driver "getComponents", config["project"]
+      input "Component", :component do
+        $jira.getComponents($config["project"]).any?{|c| c.name == $config["component"]} or raise
       end
     rescue
       puts "Invalid component name!"
@@ -115,15 +125,13 @@ PlainOptionParser.new do
     end
   end
   
-  summary, description, reviewboard, git_repo, branch, user, group
+  # summary, description, reviewboard, git_repo, branch, user, group
   
   cmd "new feature" do
-    login(config)
+    login
     title = ask("Title")
     description = ask("Description")
-    giggety = `git branch | fgrep '*'`
-    repo = 
-    create_ticket(title, description, config["user"], config["project"], nil, repo, branch)
+    create_ticket(title, description, $config["user"], $config["project"], $config["component"])
     # (summary, description, user, group, reviewboard = nil, git_repo = nil, branch = nil)
   end
   
