@@ -4,7 +4,7 @@ require 'rake'
 begin
   require 'jeweler'
   Jeweler::Tasks.new do |gem|
-    gem.name = "jira"
+    gem.name = "jira4nix"
     gem.summary = %Q{CLI for jira}
     gem.description = %Q{Work in progress}
     gem.email = "kmaxwell@twitter.com"
