@@ -1,0 +1,130 @@
+#!/usr/bin/env ruby
+require "rubygems"
+require "plain_option_parser"
+require "highline/import"
+require "jira4r"
+require "yaml"
+
+$config_file = File.join(ENV["HOME"], ".jira.yml")
+config = File.exists?($config_file) ? YAML.load(File.open($config_file)) : {}
+
+def input(prompt, config, key, default = nil, &validation)
+  key = key.to_s
+  @original = config[key]
+  input = ask("#{prompt} [#{config[key] || default}]")
+  config[key] = input unless input.empty? 
+  config[key] ||= default
+  validation.call if validation
+  save config
+rescue
+  config[key] = @original
+  raise
+end
+
+def save(config)
+  File.open($config_file, "w") do |f|
+    YAML.dump(config, f)
+  end
+end
+
+def password(config)
+  password = ask("Enter password: ") { |q| q.echo = false }
+  init
+  config["token"] = $jira.login(config["user"], password)
+  save config
+end
+
+def init(config)
+  $jira = Jira4R::JiraTool.new(2, config["location"])
+  logger = Logger.new(STDERR)
+  logger.level = Logger::WARN
+  $jira.logger = logger
+end
+
+def login(config)
+  init(config)
+  $jira.instance_variable_set("@token", config["token"])
+end
+
+def create_ticket(summary, description, user, group, reviewboard = nil, git_repo = nil, branch = nil)
+  issue = Jira4R::V2::RemoteIssue.new
+  issue.summary = summary
+  issue.description = description
+  issue.type = 2
+  issue.assignee = user
+  issue.reporter = user
+  issue.project = group
+  
+  issue.customFieldValues = []
+  if reviewboard
+    # reviewboard custom field
+    rb = Jira4R::V2::RemoteCustomFieldValue.new
+    rb.customfieldId = "customfield_10000"
+    rb.values = reviewboard
+    issue.customFieldValues << rb
+  end
+  
+  if branch
+    # branch custom field
+    b = Jira4R::V2::RemoteCustomFieldValue.new
+    b.customfieldId = "customfield_10022"
+    b.values = branch
+    issue.customFieldValues << b
+  end
+  
+  if git_repo
+    # 'git repository' custom field
+    gr = Jira4R::V2::RemoteCustomFieldValue.new
+    gr.customfieldId = "customfield_10052"
+    gr.values = git_repo
+    issue.customFieldValues << gr
+  end
+    
+  puts issue.inspect
+  
+  issue = $jira.createIssue(issue)
+end
+
+PlainOptionParser.new do
+  desc "Setup your global JIRA settings"
+  cmd "setup" do 
+    input "JIRA location", config, :location
+    input "JIRA user", config, :user, ENV["USER"]
+    password config
+  end  
+  
+  desc "Make a context"
+  cmd "configure" do
+    login(config)
+    begin
+      input "Project", config, :project do
+        $project = $jira.getProjectByKey(config["project"])
+      end
+    rescue
+      puts "Invalid project name!"
+      retry
+    end
+    
+    begin
+      input "Component", config, :component do
+        $jira.call_driver "getComponents", config["project"]
+      end
+    rescue
+      puts "Invalid component name!"
+      retry
+    end
+  end
+  
+  summary, description, reviewboard, git_repo, branch, user, group
+  
+  cmd "new feature" do
+    login(config)
+    title = ask("Title")
+    description = ask("Description")
+    giggety = `git branch | fgrep '*'`
+    repo = 
+    create_ticket(title, description, config["user"], config["project"], nil, repo, branch)
+    # (summary, description, user, group, reviewboard = nil, git_repo = nil, branch = nil)
+  end
+  
+end.start(ARGV)
