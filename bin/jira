@@ -47,11 +47,11 @@ def login
   $jira.instance_variable_set("@token", $config["token"])
 end
 
-def create_ticket(summary, description, user, group, component, reviewboard = nil, git_repo = nil, branch = nil)
+def create_ticket(type, summary, description, user, group, component, reviewboard = nil, git_repo = nil, branch = nil)
   issue = Jira4R::V2::RemoteIssue.new
   issue.summary = summary
   issue.description = description
-  issue.type = 2
+  issue.type = type
   issue.assignee = user
   issue.reporter = user
   issue.project = group
@@ -127,12 +127,29 @@ PlainOptionParser.new do
   
   # summary, description, reviewboard, git_repo, branch, user, group
   
-  cmd "new feature" do
+  def new_issue(type)
     login
     title = ask("Title")
     description = ask("Description")
-    create_ticket(title, description, $config["user"], $config["project"], $config["component"])
-    # (summary, description, user, group, reviewboard = nil, git_repo = nil, branch = nil)
+    create_ticket(type, title, description, $config["user"], $config["project"], $config["component"])
+  end
+  
+  {
+    1 => "bug",
+    2 => "feature",
+    3 => "task",
+    12 => "idea",
+    11 => "incident",
+    4 => "improvement",
+    8 => "question",
+    13 => "experiment",
+    14 => "triage",
+    10 => "eng"
+  }.each do |k, v|
+    desc "create a new #{v} issue"
+    cmd "new #{v}" do
+      new_issue(k)
+    end
   end
   
 end.start(ARGV)
